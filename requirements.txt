@@ -1,7 +1,6 @@
-pytorch
+torch
 cytoolz
 gensim
 pandas
 scikit-learn
 tensorboardX
-

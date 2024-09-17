@@ -4,6 +4,7 @@ import json
 import os
 from os.path import join
 from datetime import timedelta
+import sys
 from time import time
 from collections import Counter, defaultdict
 from itertools import product
@@ -21,6 +22,9 @@ from data.batcher import tokenize
 from decoding import Abstractor, RLExtractor, DecodeDataset, BeamAbstractor
 from decoding import make_html_safe
 
+def coll(batch):
+    articles = list(filter(bool, batch))
+    return articles
 
 def decode(save_path, model_dir, split, batch_size,
            beam_size, diverse, max_len, cuda):
@@ -43,9 +47,7 @@ def decode(save_path, model_dir, split, batch_size,
     extractor = RLExtractor(model_dir, cuda=cuda)
 
     # setup loader
-    def coll(batch):
-        articles = list(filter(bool, batch))
-        return articles
+
     dataset = DecodeDataset(split)
 
     n_data = len(dataset)
@@ -55,7 +57,8 @@ def decode(save_path, model_dir, split, batch_size,
     )
 
     # prepare save paths and logs
-    os.makedirs(join(save_path, 'output'))
+    os.makedirs(join(save_path, 'output'), exist_ok=True)
+    os.makedirs(join(save_path, 'json_output'), exist_ok=True)
     dec_log = {}
     dec_log['abstractor'] = meta['net_args']['abstractor']
     dec_log['extractor'] = meta['net_args']['extractor']
@@ -89,16 +92,24 @@ def decode(save_path, model_dir, split, batch_size,
             else:
                 dec_outs = abstractor(ext_arts)
             assert i == batch_size*i_debug
+            summaries = []
             for j, n in ext_inds:
                 decoded_sents = [' '.join(dec) for dec in dec_outs[j:j+n]]
                 with open(join(save_path, 'output/{}.dec'.format(i)),
-                          'w') as f:
+                          'w', encoding="utf-8") as f:
                     f.write(make_html_safe('\n'.join(decoded_sents)))
+                # save json
+                summary = '\n'.join(decoded_sents)
+                summaries.append({"veclex_summary": summary})
                 i += 1
                 print('{}/{} ({:.2f}%) decoded in {} seconds\r'.format(
                     i, n_data, i/n_data*100,
                     timedelta(seconds=int(time()-start))
                 ), end='')
+
+            with open(join(save_path, 'json_output/summaries.json'),
+                        'w', encoding="utf-8") as f:
+                json.dump(summaries, f, indent=4, ensure_ascii=False)
     print()
 
 _PRUNE = defaultdict(
@@ -164,6 +175,15 @@ if __name__ == '__main__':
     args.cuda = torch.cuda.is_available() and not args.no_cuda
 
     data_split = 'test' if args.test else 'val'
+
+    if not torch.cuda.is_available():
+        no_gpu_answer = input(
+            "No cuda detected. Do you still want to continue? Note: Decoding will be slow. [y/n]: "
+        )
+
+        if no_gpu_answer not in ["y", "Y"]:
+            print("Terminating Experiment - check CUDA is installed.")
+            sys.exit()
     decode(args.path, args.model_dir,
            data_split, args.batch, args.beam, args.div,
            args.max_dec_word, args.cuda)

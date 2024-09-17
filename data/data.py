@@ -17,7 +17,7 @@ class CnnDmDataset(Dataset):
         return self._n_data
 
     def __getitem__(self, i: int):
-        with open(join(self._data_path, '{}.json'.format(i))) as f:
+        with open(join(self._data_path, '{}.json'.format(i)), encoding="utf-8") as f:
             js = json.loads(f.read())
         return js
 
